@@ -80,7 +80,7 @@ def validate_action(action: Dict[str, Any]) -> Optional[str]:
         return "Action must be a dictionary"
     
     act_type = action.get("action")
-    valid_actions = {"tap", "type", "home", "back", "wait", "done", "enter", "clear"}
+    valid_actions = {"tap", "type", "home", "back", "wait", "done", "enter", "clear", "launch", "scroll"}
     
     if act_type not in valid_actions:
         return f"Unknown action '{act_type}'. Must be one of: {valid_actions}"
@@ -98,6 +98,16 @@ def validate_action(action: Dict[str, Any]) -> Optional[str]:
         text = action.get("text")
         if not isinstance(text, str) or not text:
             return "'type' action requires non-empty 'text' string"
+    
+    if act_type == "launch":
+        package = action.get("package")
+        if not isinstance(package, str) or not package:
+            return "'launch' action requires non-empty 'package' string"
+    
+    if act_type == "scroll":
+        direction = action.get("direction", "down")
+        if direction not in {"up", "down", "left", "right"}:
+            return "'scroll' direction must be one of: up, down, left, right"
     
     return None
 
@@ -141,6 +151,27 @@ def execute_action(action: Dict[str, Any]) -> bool:
         # Fallback: try select-all + delete
         run_adb_command(["shell", "input", "keycombination", "KEYCODE_CTRL_LEFT", "KEYCODE_A"])  # Select all
         run_adb_command(["shell", "input", "keyevent", "KEYCODE_DEL"])  # Delete selection
+    
+    elif act_type == "launch":
+        package = action.get("package")
+        print(f"🚀 Launching app: {package}")
+        run_adb_command(["shell", "monkey", "-p", package, "-c", "android.intent.category.LAUNCHER", "1"])
+    
+    elif act_type == "scroll":
+        direction = action.get("direction", "down")
+        print(f"📜 Scrolling {direction}")
+        # Get screen dimensions (approximate center for swipe)
+        # Default to common phone resolution center
+        cx, cy = 540, 1200
+        distance = 500
+        if direction == "down":
+            run_adb_command(["shell", "input", "swipe", str(cx), str(cy), str(cx), str(cy - distance), "300"])
+        elif direction == "up":
+            run_adb_command(["shell", "input", "swipe", str(cx), str(cy - distance), str(cx), str(cy), "300"])
+        elif direction == "left":
+            run_adb_command(["shell", "input", "swipe", str(cx), str(cy), str(cx - distance), str(cy), "300"])
+        elif direction == "right":
+            run_adb_command(["shell", "input", "swipe", str(cx - distance), str(cy), str(cx), str(cy), "300"])
         
     elif act_type == "done":
         print("✅ Goal Achieved.")
@@ -167,6 +198,8 @@ Available Actions:
 - {"action": "home", "reason": "Go to home screen"}
 - {"action": "back", "reason": "Go back"}
 - {"action": "wait", "reason": "Wait for loading"}
+- {"action": "scroll", "direction": "down", "reason": "Scroll to see more content"}
+- {"action": "launch", "package": "com.example.app", "reason": "Launch an app by package name"}
 - {"action": "done", "reason": "Task complete"}
 
 IMPORTANT WORKFLOW RULES:
