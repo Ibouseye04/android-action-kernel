@@ -3,8 +3,12 @@ import time
 import subprocess
 import json
 from typing import Dict, Any, List, Optional, Tuple
+from dotenv import load_dotenv
 from openai import OpenAI
 import sanitizer
+
+# Load environment variables from .env file
+load_dotenv()
 
 # --- CONFIGURATION ---
 ADB_PATH = "adb"  # Ensure adb is in your PATH

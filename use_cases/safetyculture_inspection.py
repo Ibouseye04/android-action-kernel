@@ -91,6 +91,7 @@ MVP_TEMPLATE_CONFIG = {
 }
 
 # Common popup dismiss buttons to auto-handle
+# NOTE: Do NOT add "SAVE" here - it's needed for date picker and should be tapped intentionally by the agent
 POPUP_DISMISS_TEXTS = [
     "Allow",
     "Don't allow",
@@ -105,7 +106,6 @@ POPUP_DISMISS_TEXTS = [
     "Dismiss",
     "Cancel",
     "Maybe later",
-    "SAVE",      # Date/time picker save button
 ]
 
 # Success detection: We need MULTIPLE anchors present to confirm the Report screen
@@ -269,7 +269,7 @@ def build_inspection_goal(config: dict) -> str:
             )
         elif q_type == "date":
             question_plan.append(
-                f"  Q{i}: Date question. Tap 'Select Date', choose '{str(answer)}' (prefer today's date), then confirm"
+                f"  Q{i}: Date question. Tap 'Select Date', then tap 'SAVE' (top right) to confirm today's date"
             )
         elif q_type == "media":
             question_plan.append(
@@ -299,9 +299,10 @@ IMPORTANT RULES:
 - The Title Page (Page 1/2) has "Conducted on", "Prepared by", "Location" - SKIP these and tap "Next"
 - For choice questions, look for Yes/No/N/A buttons and tap the appropriate one
 - For text/number fields, tap the field first, then type the answer
-- Scroll down if you don't see the next question
-- Do NOT take photos or add attachments - skip media steps
-- If a date/time picker opens, tap "SAVE" to close it
+- Scroll down if you don't see the next question or if you need to find the Complete button
+- Do NOT take photos or add attachments - skip media upload questions entirely
+- For date picker: tap "Select Date", then tap "SAVE" button (top right of dialog) to confirm
+- The "Complete" button is at the bottom - you may need to scroll down to see it
 - After tapping Complete, wait for the Report screen (with Download/Share buttons) before marking done
 """
     return goal
