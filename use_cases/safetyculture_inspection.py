@@ -105,15 +105,17 @@ POPUP_DISMISS_TEXTS = [
     "Dismiss",
     "Cancel",
     "Maybe later",
+    "SAVE",      # Date/time picker save button
 ]
 
-# Success detection anchors (detected on the Report screen after submission)
-SUCCESS_ANCHORS = [
-    "Report",           # Title of the post-submission screen
-    "Download",         # Button on Report screen
-    "Share",            # Button on Report screen
-    "Submitted",
-    "Inspection submitted",
+# Success detection: We need MULTIPLE anchors present to confirm the Report screen
+# This avoids false positives from partial matches (e.g., "HSE Contractor Performance Report")
+SUCCESS_ANCHOR_SETS = [
+    # Report screen has both Download AND Share buttons
+    {"Download", "Share"},
+    # Alternative: explicit submission confirmation
+    {"Inspection submitted"},
+    {"Successfully submitted"},
 ]
 
 # --- LOGGING ---
@@ -285,18 +287,22 @@ def build_inspection_goal(config: dict) -> str:
 
 1. The SafetyCulture app is now open
 2. Navigate to start a new inspection using template: "{template_name}"
-3. If prompted for location, select: "{location}"
-4. Answer each question in order:
+3. The inspection starts on a "Title Page" (Page 1/2) with pre-filled fields like "Conducted on", "Prepared by", "Location"
+   - Do NOT edit these fields - they are auto-filled
+   - Tap "Next" (bottom right corner) to go to Page 2/2 where the actual questions are
+4. On Page 2/2, answer each question in order:
 {plan_str}
 5. After answering all questions, tap "Complete" to submit the inspection
 6. Wait for confirmation that the inspection was submitted successfully
 
 IMPORTANT RULES:
+- The Title Page (Page 1/2) has "Conducted on", "Prepared by", "Location" - SKIP these and tap "Next"
 - For choice questions, look for Yes/No/N/A buttons and tap the appropriate one
+- For text/number fields, tap the field first, then type the answer
 - Scroll down if you don't see the next question
-- Do NOT take photos or add attachments - skip media steps unless the form blocks you
-- After tapping Submit, wait for the success confirmation before marking done
-- If you see a popup or dialog, dismiss it and continue
+- Do NOT take photos or add attachments - skip media steps
+- If a date/time picker opens, tap "SAVE" to close it
+- After tapping Complete, wait for the Report screen (with Download/Share buttons) before marking done
 """
     return goal
 
@@ -384,29 +390,36 @@ def run_safetyculture_agent(
             time.sleep(1)
             screen_context = get_screen_state()
         
-        # 3. Check for success anchors
+        # 3. Check for success anchors (require ALL anchors in a set to be present)
         try:
             elements = json.loads(screen_context)
+            # Collect all visible text on screen
+            all_text = set()
             for elem in elements:
-                elem_text = elem.get("text", "").lower()
-                for anchor in SUCCESS_ANCHORS:
-                    if anchor.lower() in elem_text:
-                        print(f"🎉 Success detected: '{anchor}'")
-                        result["success"] = True
-                        result["duration_s"] = time.time() - start_time
-                        log_step(log_path, {
-                            "step": step + 1,
-                            "event": "success",
-                            "anchor": anchor,
-                            "timestamp": datetime.datetime.now().isoformat(),
-                        })
-                        log_step(log_path, {
-                            "event": "run_end",
-                            "success": True,
-                            "steps": result["steps"],
-                            "duration_s": result["duration_s"],
-                        })
-                        return result
+                elem_text = elem.get("text", "").strip().lower()
+                if elem_text:
+                    all_text.add(elem_text)
+            
+            # Check if any anchor set is fully satisfied
+            for anchor_set in SUCCESS_ANCHOR_SETS:
+                matched = all(any(anchor.lower() in txt for txt in all_text) for anchor in anchor_set)
+                if matched:
+                    print(f"🎉 Success detected: {anchor_set}")
+                    result["success"] = True
+                    result["duration_s"] = time.time() - start_time
+                    log_step(log_path, {
+                        "step": step + 1,
+                        "event": "success",
+                        "anchors": list(anchor_set),
+                        "timestamp": datetime.datetime.now().isoformat(),
+                    })
+                    log_step(log_path, {
+                        "event": "run_end",
+                        "success": True,
+                        "steps": result["steps"],
+                        "duration_s": result["duration_s"],
+                    })
+                    return result
         except json.JSONDecodeError:
             pass
         
@@ -448,14 +461,32 @@ def run_safetyculture_agent(
             # Agent said done - verify with success anchors
             time.sleep(2)
             screen_context = get_screen_state()
-            found_anchor = wait_until_any_text(SUCCESS_ANCHORS, timeout_s=5)
             
-            if found_anchor:
-                result["success"] = True
-                print(f"✅ Inspection submitted successfully!")
-            else:
-                print("⚠️ Agent marked done but no success anchor found")
-                result["failure_reason"] = "Agent marked done but submission not confirmed"
+            # Check for success using anchor sets
+            try:
+                elements = json.loads(screen_context)
+                all_text = set()
+                for elem in elements:
+                    elem_text = elem.get("text", "").strip().lower()
+                    if elem_text:
+                        all_text.add(elem_text)
+                
+                found_success = False
+                for anchor_set in SUCCESS_ANCHOR_SETS:
+                    matched = all(any(anchor.lower() in txt for txt in all_text) for anchor in anchor_set)
+                    if matched:
+                        found_success = True
+                        break
+                
+                if found_success:
+                    result["success"] = True
+                    print(f"✅ Inspection submitted successfully!")
+                else:
+                    print("⚠️ Agent marked done but no success anchor found")
+                    result["failure_reason"] = "Agent marked done but submission not confirmed"
+            except json.JSONDecodeError:
+                print("⚠️ Could not verify success - screen parse error")
+                result["failure_reason"] = "Could not verify submission"
             
             break
         
